@@ -1,0 +1,42 @@
+{
+  "agent": {
+    "name": "HealthOrder",
+    "id": "healthorder",
+    "role": "Twice-daily health checker",
+    "mission": "Silent-by-default health checker that only speaks up on failure"
+  },
+  "model": {
+    "provider": "opencode",
+    "model": "deepseek/deepseek-v4-flash",
+    "temperature": 0.1,
+    "max_tokens": 2048
+  },
+  "checks": {
+    "system": {
+      "disk_space": {"enabled": true, "threshold_percent": 90},
+      "memory": {"enabled": true, "threshold_percent": 90},
+      "cpu": {"enabled": true, "threshold_percent": 95},
+      "load_average": {"enabled": true}
+    },
+    "services": {
+      "openclaw_gateway": {"enabled": true, "endpoint": "http://localhost:18789/health"},
+      "discord_webhook": {"enabled": false}
+    },
+    "agents": {
+      "scoutorder": {"enabled": true, "max_age_hours": 24},
+      "geoorder": {"enabled": true, "max_age_hours": 24},
+      "buildorder": {"enabled": true, "max_age_hours": 6},
+      "healthorder": {"enabled": true}
+    }
+  },
+  "schedule": {
+    "cron": "0 9,21 * * *",
+    "timezone": "Asia/Singapore"
+  },
+  "output": {
+    "discord_webhook": "${DISCORD_WEBHOOK_HEALTH}",
+    "silent_on_success": true,
+    "alert_on_failure": true,
+    "log_file": "logs/healthorder.log"
+  }
+}
