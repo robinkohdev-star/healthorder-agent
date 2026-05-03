@@ -6,8 +6,9 @@
     "mission": "Silent-by-default health checker that only speaks up on failure"
   },
   "model": {
-    "provider": "opencode",
-    "model": "deepseek/deepseek-v4-flash",
+    "provider": "ollama",
+    "base_url": "http://localhost:11434",
+    "model": "gemma4:e2b",
     "temperature": 0.1,
     "max_tokens": 2048
   },

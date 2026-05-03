@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 HealthOrder Agent - System Health Checker
-Powered by DeepSeek V4 Flash via OpenCode
+Powered by Gemma4:e2b via Ollama (local LLM)
 Posts status to Discord on every run
 """
 
@@ -22,7 +22,6 @@ class HealthOrder:
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         
-        self.opencode_api_key = os.getenv("OPENCODE_API_KEY")
         self.discord_webhook = os.getenv("DISCORD_WEBHOOK_HEALTH") or self.config['output']['discord_webhook']
         self.failures: List[Dict[str, Any]] = []
         self.vulnerabilities: List[Dict[str, Any]] = []
@@ -442,35 +441,35 @@ Provide:
 
 Be concise and prioritize security issues."""
         
+        # Use Ollama for local LLM analysis
+        base_url = self.config['model'].get('base_url', 'http://localhost:11434')
+        model = self.config['model']['model']
+        
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    "https://api.opencode.ai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {self.opencode_api_key}"},
+                    f"{base_url}/api/generate",
                     json={
-                        "model": self.config['model']['model'],
-                        "messages": [{"role": "user", "content": prompt}],
-                        "temperature": self.config['model']['temperature'],
-                        "max_tokens": self.config['model']['max_tokens']
+                        "model": model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "options": {
+                            "temperature": self.config['model']['temperature'],
+                            "num_predict": self.config['model']['max_tokens']
+                        }
                     }
                 ) as resp:
                     if resp.status != 200:
                         text = await resp.text()
-                        print(f"API error: {resp.status} - {text[:200]}")
-                        return f"Analysis unavailable (API status {resp.status}). Manual review recommended."
-                    
-                    # Check content type before parsing JSON
-                    content_type = resp.headers.get('Content-Type', '')
-                    if 'application/json' not in content_type:
-                        text = await resp.text()
-                        print(f"Unexpected content type: {content_type}")
-                        print(f"Response: {text[:500]}")
-                        return "Analysis unavailable (API returned non-JSON). Manual review recommended."
+                        print(f"Ollama API error: {resp.status} - {text[:200]}")
+                        return f"Analysis unavailable (Ollama status {resp.status}). Ensure Ollama is running with model '{model}'."
                     
                     result = await resp.json()
-                    return result['choices'][0]['message']['content']
+                    return result.get('response', 'No analysis generated')
+        except aiohttp.ClientConnectorError:
+            return f"Analysis unavailable. Ollama not running at {base_url}. Start with: ollama run {model}"
         except Exception as e:
-            print(f"Error calling OpenCode API: {e}")
+            print(f"Error calling Ollama API: {e}")
             return "Analysis unavailable. Please review failures and vulnerabilities manually."
     
     async def post_alert(self, analysis: str, results: List[Dict[str, Any]]):
@@ -580,8 +579,8 @@ All systems operating normally. 🔒 No vulnerabilities detected.
         vuln_count = len(self.vulnerabilities)
         print(f"Checks complete: {len([r for r in results if r['status'] == 'ok'])} ok, {len(self.failures)} failed, {vuln_count} vulnerabilities")
         
-        # Analyze with DeepSeek V4 Flash
-        print("Analyzing health and security status with DeepSeek V4 Flash...")
+        # Analyze with local Ollama model
+        print(f"Analyzing health and security status with Ollama ({self.config['model']['model']})...")
         analysis = await self.analyze_failures()
         
         # Post to Discord
