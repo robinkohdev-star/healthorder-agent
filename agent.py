@@ -2,7 +2,7 @@
 """
 HealthOrder Agent - System Health Checker
 Powered by DeepSeek V4 Flash via OpenCode
-Silent by default, speaks up only on failure
+Posts status to Discord on every run
 """
 
 import os
@@ -12,6 +12,10 @@ import psutil
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import aiohttp
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class HealthOrder:
     def __init__(self, config_path: str = "config.json"):
@@ -133,27 +137,44 @@ Be concise and actionable."""
                 result = await resp.json()
                 return result['choices'][0]['message']['content']
     
-    async def post_alert(self, analysis: str):
-        """Post alert to Discord if there are failures"""
+    async def post_alert(self, analysis: str, results: List[Dict[str, Any]]):
+        """Post health status to Discord"""
         if not self.discord_webhook:
             print("No Discord webhook configured")
             return
         
-        if not self.failures:
-            return  # Silent on success
+        # Format check results
+        checks_text = "\n".join([
+            f"{'✅' if r['status'] == 'ok' else '❌'} {r['check']}: {r.get('value', r.get('code', 'ok'))}"
+            for r in results
+        ])
         
-        alert = f"""🚨 **HealthOrder Alert** 🚨
+        if self.failures:
+            # Failure alert
+            alert = f"""🚨 **HealthOrder Alert** 🚨
 
 **Time:** {datetime.now().strftime('%Y-%m-%d %H:%M')} SGT
-**Failed Checks:** {len(self.failures)}
+**Status:** {len([r for r in results if r['status'] == 'ok'])}/{len(results)} checks passed
 
-**Summary:**
+**Failed Checks:**
 {chr(10).join([f"• {f['check']}: {f.get('message', f.get('error', 'Unknown'))}" for f in self.failures])}
 
 **Analysis & Recommendations:**
-{analysis[:1500]}
+{analysis[:1200]}
 
 @channel Attention required
+"""
+        else:
+            # Success summary
+            alert = f"""✅ **HealthOrder - All Systems Healthy**
+
+**Time:** {datetime.now().strftime('%Y-%m-%d %H:%M')} SGT
+**Status:** {len(results)}/{len(results)} checks passed
+
+**Checks:**
+{checks_text}
+
+All systems operating normally.
 """
         
         async with aiohttp.ClientSession() as session:
@@ -184,14 +205,13 @@ Be concise and actionable."""
         # Log results
         print(f"Checks complete: {len([r for r in results if r['status'] == 'ok'])} ok, {len(self.failures)} failed")
         
-        # Analyze failures with DeepSeek V4 Flash
-        if self.failures:
-            print(f"Analyzing {len(self.failures)} failures with DeepSeek V4 Flash...")
-            analysis = await self.analyze_failures()
-            await self.post_alert(analysis)
-            print("Alert posted to Discord")
-        else:
-            print("All checks passed - remaining silent")
+        # Analyze with DeepSeek V4 Flash (even on success, for consistency)
+        print("Analyzing health status with DeepSeek V4 Flash...")
+        analysis = await self.analyze_failures()
+        
+        # Post to Discord (always, not just on failure)
+        await self.post_alert(analysis, results)
+        print("Status posted to Discord")
         
         print(f"[{datetime.now()}] HealthOrder complete")
 
