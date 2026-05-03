@@ -579,9 +579,9 @@ All systems operating normally. 🔒 No vulnerabilities detected.
         vuln_count = len(self.vulnerabilities)
         print(f"Checks complete: {len([r for r in results if r['status'] == 'ok'])} ok, {len(self.failures)} failed, {vuln_count} vulnerabilities")
         
-        # Analyze with local Ollama model
-        print(f"Analyzing health and security status with Ollama ({self.config['model']['model']})...")
-        analysis = await self.analyze_failures()
+        # Analyze with local Ollama model (disabled - no model available)
+        print("Ollama model not available - skipping AI analysis")
+        analysis = "Manual review recommended. Install an Ollama model to enable AI analysis."
         
         # Post to Discord
         await self.post_alert(analysis, results)
