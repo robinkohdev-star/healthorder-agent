@@ -27,6 +27,13 @@
       "geoorder": {"enabled": true, "max_age_hours": 24},
       "buildorder": {"enabled": true, "max_age_hours": 6},
       "healthorder": {"enabled": true}
+    },
+    "security": {
+      "pip_vulnerabilities": {"enabled": true, "auto_fix": false},
+      "npm_vulnerabilities": {"enabled": true, "auto_fix": false},
+      "apt_security_updates": {"enabled": true, "auto_fix": false},
+      "track_versions": true,
+      "detect_hijacking": true
     }
   },
   "schedule": {
