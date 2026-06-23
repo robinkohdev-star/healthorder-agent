@@ -6,9 +6,8 @@
     "mission": "Silent-by-default health checker that only speaks up on failure"
   },
   "model": {
-    "provider": "ollama",
-    "base_url": "http://localhost:11434",
-    "model": "tinydolphin",
+    "provider": "opencode",
+    "model": "kimi-k2.5",
     "temperature": 0.1,
     "max_tokens": 512
   },

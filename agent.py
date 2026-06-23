@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 HealthOrder Agent - System Health Checker
-Powered by Gemma4:e2b via Ollama (local LLM)
+Powered by OpenCode API (kimi-k2.5)
 Posts status to Discord on every run
 """
 
@@ -17,12 +17,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# OpenCode API settings
+OPENCODE_API_KEY = os.getenv("OPENCODE_API", "")
+OPENCODE_API_URL = "https://api.opencode.ai/v1/chat/completions"
+
 class HealthOrder:
     def __init__(self, config_path: str = "config.json"):
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         
         self.discord_webhook = os.getenv("DISCORD_WEBHOOK_HEALTH") or self.config['output']['discord_webhook']
+        self.model = self.config['model']['model']
         self.failures: List[Dict[str, Any]] = []
         self.vulnerabilities: List[Dict[str, Any]] = []
         self.package_state_file = "state/package-state.json"
@@ -42,6 +47,48 @@ class HealthOrder:
         state["last_scan"] = datetime.now().isoformat()
         with open(self.package_state_file, 'w') as f:
             json.dump(state, f, indent=2)
+    
+    async def call_opencode(self, prompt: str, system: str = "") -> str:
+        """Call OpenCode API for analysis"""
+        if not OPENCODE_API_KEY:
+            return "OpenCode API key not configured"
+        
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system or "You are a system health analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": self.config['model'].get('temperature', 0.1),
+            "max_tokens": self.config['model'].get('max_tokens', 512)
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {OPENCODE_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    OPENCODE_API_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=60)
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        print(f"OpenCode API error {response.status}: {error_text[:200]}")
+                        return f"Analysis unavailable (API status {response.status})"
+                    
+                    data = await response.json()
+                    return data.get('choices', [{}])[0].get('message', {}).get('content', 'No analysis generated')
+                    
+        except asyncio.TimeoutError:
+            return "Analysis unavailable (API timeout)"
+        except Exception as e:
+            print(f"OpenCode API error: {e}")
+            return f"Analysis unavailable: {str(e)}"
     
     async def scan_pip_vulnerabilities(self) -> Dict[str, Any]:
         """Scan Python packages for vulnerabilities using pip-audit"""
@@ -400,7 +447,7 @@ class HealthOrder:
             return {'check': 'openclaw_gateway', 'status': 'failed', 'error': str(e)}
     
     async def analyze_failures(self) -> str:
-        """Use DeepSeek V4 Flash to analyze and summarize failures"""
+        """Use OpenCode API to analyze and summarize failures"""
         if not self.failures and not self.vulnerabilities:
             return "All systems healthy"
         
@@ -441,36 +488,7 @@ Provide:
 
 Be concise and prioritize security issues."""
         
-        # Use Ollama for local LLM analysis
-        base_url = self.config['model'].get('base_url', 'http://localhost:11434')
-        model = self.config['model']['model']
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{base_url}/api/generate",
-                    json={
-                        "model": model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": self.config['model']['temperature'],
-                            "num_predict": self.config['model']['max_tokens']
-                        }
-                    }
-                ) as resp:
-                    if resp.status != 200:
-                        text = await resp.text()
-                        print(f"Ollama API error: {resp.status} - {text[:200]}")
-                        return f"Analysis unavailable (Ollama status {resp.status}). Ensure Ollama is running with model '{model}'."
-                    
-                    result = await resp.json()
-                    return result.get('response', 'No analysis generated')
-        except aiohttp.ClientConnectorError:
-            return f"Analysis unavailable. Ollama not running at {base_url}. Start with: ollama run {model}"
-        except Exception as e:
-            print(f"Error calling Ollama API: {e}")
-            return "Analysis unavailable. Please review failures and vulnerabilities manually."
+        return await self.call_opencode(prompt, "You are a system security analyst. Be concise and actionable.")
     
     async def post_alert(self, analysis: str, results: List[Dict[str, Any]]):
         """Post health status to Discord"""
@@ -552,6 +570,7 @@ All systems operating normally. 🔒 No vulnerabilities detected.
     async def run(self):
         """Main health check loop"""
         print(f"[{datetime.now()}] HealthOrder running checks...")
+        print(f"Model: {self.model} (OpenCode API)")
         
         # Run all checks
         results = []
@@ -579,9 +598,9 @@ All systems operating normally. 🔒 No vulnerabilities detected.
         vuln_count = len(self.vulnerabilities)
         print(f"Checks complete: {len([r for r in results if r['status'] == 'ok'])} ok, {len(self.failures)} failed, {vuln_count} vulnerabilities")
         
-        # Analyze with local Ollama model (disabled - no model available)
-        print("Ollama model not available - skipping AI analysis")
-        analysis = "Manual review recommended. Install an Ollama model to enable AI analysis."
+        # Analyze with OpenCode API
+        print("Analyzing with OpenCode API...")
+        analysis = await self.analyze_failures()
         
         # Post to Discord
         await self.post_alert(analysis, results)
